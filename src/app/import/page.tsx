@@ -3,44 +3,47 @@
 // DESCRIPTION: UI to import books from Google Books by query.
 //==============================================================
 
+import { redirect } from "next/navigation"
 
-'use client'
+export default async function ImportPage({
+  searchParams,
+}: {
+  searchParams: { q?: string }
+}) {
+  const q = searchParams.q?.trim() || ""
 
+  if (!q) {
+    return (
+      <div>
+        <h1 className="text-2xl font-semibold mb-2">Import</h1>
+        <p>No query provided.</p>
+      </div>
+    )
+  }
 
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+  // Call your API to import
+  const res = await fetch(
+    `${process.env.NEXT_PUBLIC_BASE_URL}/api/books/search?q=${encodeURIComponent(q)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  )
 
+  let msg = "Failed to import"
+  if (res.ok) {
+    const j = await res.json()
+    msg = `Imported ${j.items?.length || 0} books`
+  }
 
-export default function ImportPage() {
-const sp = useSearchParams()
-const r = useRouter()
-const q = sp.get('q') || ''
-const [loading, setLoading] = useState(false)
-const [msg, setMsg] = useState('')
+  // After import, redirect back to search results
+  redirect(`/?q=${encodeURIComponent(q)}`)
 
-
-async function run() {
-if (!q) return
-setLoading(true)
-const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}`)
-const j = await res.json()
-setMsg(`Imported ${j.items?.length || 0} books`)
-setLoading(false)
-setTimeout(() => r.push(`/?q=${encodeURIComponent(q)}`), 1200)
+  // This will render briefly if redirect doesn’t happen instantly
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold mb-2">Importing "{q}"</h1>
+      <p>{msg}</p>
+    </div>
+  )
 }
-
-
-useEffect(() => {
-if (q) run()
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [q])
-
-
-return (
-<div>
-<h1 className="text-2xl font-semibold mb-2">Importing "{q}"</h1>
-<p>{loading ? 'Importing from Google Books...' : msg || 'Waiting...'}</p>
-</div>
-)
-}
-

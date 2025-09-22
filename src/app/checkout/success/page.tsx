@@ -3,29 +3,40 @@
 // DESCRIPTION: Success page verifies session and clears cart.
 //==============================================================
 
+import { prisma } from "../../lib/prisma"
+import { NextResponse } from "next/server"
 
-'use client'
+export default async function SuccessPage({
+  searchParams,
+}: {
+  searchParams: { session_id?: string }
+}) {
+  const sessionId = searchParams.session_id
 
+  let ok: boolean | null = null
+  if (sessionId) {
+    try {
+      // verify via internal API
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/orders/verify`, {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId }),
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      })
+      const data = await res.json()
+      ok = data.ok ?? null
+    } catch (err) {
+      ok = false
+    }
+  }
 
-import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
-
-
-export default function SuccessPage() {
-const sp = useSearchParams()
-const [ok, setOk] = useState<boolean | null>(null)
-useEffect(() => {
-const id = sp.get('session_id')
-if (!id) return
-fetch('/api/orders/verify', { method: 'POST', body: JSON.stringify({ session_id: id }) })
-.then((r) => r.json())
-.then((j) => setOk(j.ok))
-}, [sp])
-return (
-<div className="space-y-2">
-<h1 className="text-2xl font-semibold">Payment {ok ? 'Confirmed' : ok === false ? 'Pending' : '...'}</h1>
-<p>Thank you for your purchase!</p>
-</div>
-)
+  return (
+    <div className="space-y-2">
+      <h1 className="text-2xl font-semibold">
+        Payment{" "}
+        {ok === true ? "Confirmed" : ok === false ? "Pending" : "Processing..."}
+      </h1>
+      <p>Thank you for your purchase!</p>
+    </div>
+  )
 }
-
