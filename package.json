@@ -10,7 +10,8 @@
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "db:seed": "pnpm prisma db seed"
+    "db:seed": "pnpm prisma db seed",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
