@@ -4,6 +4,7 @@
 //              try to fetch from Google Books (via ensureBookFileById),
 //              upload to Cloudinary, and persist. Then stream.
 //              Supports ?inline=1 for PDF viewer.
+//              HEAD requests are short-circuited.
 //==============================================================
 
 import { NextResponse } from "next/server"
@@ -23,10 +24,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // 2) Load book
+  // 2) Load book (include googleVolumeId for fallback)
   const book = await prisma.book.findUnique({
     where: { id: params.id },
-    select: { id: true, title: true, fileUrl: true },
+    select: { id: true, title: true, fileUrl: true, googleVolumeId: true },
   })
   if (!book) {
     return NextResponse.json({ error: "Book not found" }, { status: 404 })
@@ -46,9 +47,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   if (!fileUrl) {
     fileUrl = await ensureBookFileById(book.id)
     if (!fileUrl) {
+      // explicit fallback marker for Google Viewer
       return NextResponse.json(
-        { error: "File not available. (Google Books may not allow download)" },
-        { status: 404 }
+        { fallback: "GOOGLE", volumeId: book.googleVolumeId },
+        { status: 200 }
       )
     }
   }
@@ -74,14 +76,25 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       fileUrl.endsWith(".pdf") ? ".pdf" : ""
     const safeName = (book.title || "book").replace(/[^\w.-]+/g, "_") + ext
 
-    // Prepare headers
+    // HEAD short-circuit (no body fetch)
+    if (req.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition": `${disposition}; filename="${safeName}"`,
+        },
+      })
+    }
+
+    // Prepare headers for GET
     const headers = new Headers(upstream.headers)
     headers.set("Content-Type", contentType)
     headers.set("Content-Disposition", `${disposition}; filename="${safeName}"`)
 
     return new Response(upstream.body, { status: upstream.status, headers })
   } catch (err) {
-    console.error("[download] upstream error", err)
+    console.error("[download] upstream error", { bookId: book.id, fileUrl, err })
     return NextResponse.json({ error: "Download failed" }, { status: 500 })
   }
 }

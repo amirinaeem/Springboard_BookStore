@@ -1,12 +1,13 @@
 //==============================================================
 // FILE: src/lib/ensureBookFile.ts
-// DESCRIPTION: If book.fileUrl is empty, try to fetch from
-//              Google Books API (using googleVolumeId), upload
-//              to Cloudinary, and save the URL.
+// DESCRIPTION: Ensure book.fileUrl is set. If free (downloadLink),
+//              upload to Cloudinary. Otherwise, use Google Books
+//              preview (webReaderLink).
 //==============================================================
 
 import fs from "fs"
 import path from "path"
+import os from "os"
 import { prisma } from "../lib/prisma"
 import { uploadRawFile } from "./cloudinary"
 
@@ -19,7 +20,6 @@ function tryFirstExisting(paths: string[]) {
   return null
 }
 
-/** Returns a non-empty fileUrl after ensuring upload (or null). */
 export async function ensureBookFileById(bookId: string) {
   const book = await prisma.book.findUnique({
     where: { id: bookId },
@@ -31,21 +31,16 @@ export async function ensureBookFileById(bookId: string) {
   const publicId = `book_${book.id}`
 
   // ------------------------------
-  // 1. Try local files (for dev/test)
+  // 1. Local dev/test
   // ------------------------------
   const booksDir = path.join(process.cwd(), "books")
   const candidates: string[] = []
   const nameSlug = book.title ? slug(book.title) : ""
-
-  const add = (name: string | undefined | null) => {
-    if (!name) return
-    candidates.push(path.join(booksDir, `${name}.pdf`))
-    candidates.push(path.join(booksDir, `${name}.epub`))
-  }
-  add(book.id)
-  add(book.googleVolumeId || undefined)
-  add(nameSlug)
-
+  ;[book.id, book.googleVolumeId, nameSlug].forEach((n) => {
+    if (!n) return
+    candidates.push(path.join(booksDir, `${n}.pdf`))
+    candidates.push(path.join(booksDir, `${n}.epub`))
+  })
   const found = tryFirstExisting(candidates)
   if (found) {
     const url = await uploadRawFile(found, publicId)
@@ -54,7 +49,7 @@ export async function ensureBookFileById(bookId: string) {
   }
 
   // ------------------------------
-  // 2. Fallback: Google Books API
+  // 2. Google Books
   // ------------------------------
   if (book.googleVolumeId) {
     try {
@@ -68,43 +63,42 @@ export async function ensureBookFileById(bookId: string) {
       if (!res.ok) throw new Error("Google Books API failed")
       const data = await res.json()
 
-      // Prefer EPUB download, fallback to PDF
       const epubLink = data.accessInfo?.epub?.downloadLink
       const pdfLink = data.accessInfo?.pdf?.downloadLink
       const downloadUrl = epubLink || pdfLink
 
       if (downloadUrl) {
-        const tmpFile = path.join(process.cwd(), "tmp_download")
-        const tmpPath = path.join(tmpFile, `${book.id}.pdf`)
-        fs.mkdirSync(tmpFile, { recursive: true })
+        // ✅ Free book with real download
+        const ext = epubLink ? ".epub" : ".pdf"
+        const tmpDir = path.join(os.tmpdir(), "books_tmp")
+        const tmpPath = path.join(tmpDir, `${book.id}${ext}`)
+        fs.mkdirSync(tmpDir, { recursive: true })
 
-        // Fetch & save temporarily
         const fileRes = await fetch(downloadUrl)
         if (!fileRes.ok) throw new Error("Book file download failed")
-        const buffer = Buffer.from(await fileRes.arrayBuffer())
-        fs.writeFileSync(tmpPath, buffer)
+        fs.writeFileSync(tmpPath, Buffer.from(await fileRes.arrayBuffer()))
 
-        // Upload to Cloudinary
         const url = await uploadRawFile(tmpPath, publicId)
-
-        // Save URL in DB
-        await prisma.book.update({
-          where: { id: book.id },
-          data: { fileUrl: url },
-        })
-
-        // Clean up
+        await prisma.book.update({ where: { id: book.id }, data: { fileUrl: url } })
         fs.unlinkSync(tmpPath)
 
         return url
+      }
+
+      // ❌ Not free → preview only
+      const previewUrl =
+        data.accessInfo?.webReaderLink || data.volumeInfo?.previewLink || null
+      if (previewUrl) {
+        await prisma.book.update({
+          where: { id: book.id },
+          data: { fileUrl: previewUrl },
+        })
+        return previewUrl
       }
     } catch (err) {
       console.error("Google Books fetch failed", err)
     }
   }
 
-  // ------------------------------
-  // 3. Nothing found
-  // ------------------------------
   return null
 }

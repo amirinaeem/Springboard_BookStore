@@ -33,7 +33,12 @@ export default async function BookReadPage({ params }: { params: { id: string } 
   return (
     <div className="p-4 h-screen flex flex-col">
       <ReaderHeader title={book.title} />
-      <BookViewer fileUrl={streamUrl} bookId={book.id} />
+      <BookViewer
+  fileUrl={streamUrl}
+  bookId={book.id}
+  googleVolumeId={book.googleVolumeId}
+/>
+
     </div>
   )
 }

@@ -1,7 +1,7 @@
 "use client"
 //==============================================================
 // COMPONENT: BookViewer
-// DESCRIPTION: Detects type via HEAD request, renders PDF or EPUB.
+// DESCRIPTION: Show PDF/EPUB if available, fallback to Google Books preview.
 //==============================================================
 
 import { useEffect, useRef, useState } from "react"
@@ -12,10 +12,16 @@ import ePub from "epubjs"
 import "@react-pdf-viewer/core/lib/styles/index.css"
 import "@react-pdf-viewer/default-layout/lib/styles/index.css"
 
-export default function BookViewer({ fileUrl, bookId }: { fileUrl: string; bookId: string }) {
+interface Props {
+  fileUrl: string
+  bookId: string
+  googleVolumeId?: string
+}
+
+export default function BookViewer({ fileUrl, bookId, googleVolumeId }: Props) {
   const [contentType, setContentType] = useState<string>("")
   const [loading, setLoading] = useState(true)
-
+  const [fallback, setFallback] = useState(false) // fallback to Google
 
   const defaultLayoutPluginInstance = defaultLayoutPlugin()
 
@@ -23,6 +29,11 @@ export default function BookViewer({ fileUrl, bookId }: { fileUrl: string; bookI
   const effectiveUrl = fileUrl || `/api/books/${bookId}/download?inline=1`
 
   useEffect(() => {
+    if (!fileUrl) {
+      setLoading(false)
+      return
+    }
+
     async function detect() {
       try {
         const res = await fetch(effectiveUrl, { method: "HEAD" })
@@ -30,17 +41,17 @@ export default function BookViewer({ fileUrl, bookId }: { fileUrl: string; bookI
         setContentType(type.toLowerCase())
       } catch (err) {
         console.error("Failed to detect file type", err)
+        setFallback(true)
       } finally {
         setLoading(false)
       }
     }
     detect()
-  }, [effectiveUrl])
+  }, [effectiveUrl, fileUrl])
 
   if (loading) return <p className="text-gray-500">Loading book...</p>
 
-  if (contentType.includes("pdf")) {
-    
+  if (!fallback && contentType.includes("pdf")) {
     return (
       <div className="h-[80vh] border rounded-lg shadow-sm">
         <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
@@ -50,21 +61,25 @@ export default function BookViewer({ fileUrl, bookId }: { fileUrl: string; bookI
     )
   }
 
-  if (contentType.includes("epub") || effectiveUrl.endsWith(".epub")) {
-    return <EpubViewer fileUrl={effectiveUrl} />
+  if (!fallback && (contentType.includes("epub") || effectiveUrl.endsWith(".epub"))) {
+    return <EpubViewer fileUrl={effectiveUrl} onError={() => setFallback(true)} />
   }
 
-  // Fallback
-  return (
-    <iframe
-      src={effectiveUrl}
-      className="h-[80vh] w-full border rounded-lg shadow-sm"
-      title="Book"
-    />
-  )
+  // ---------- Fallback: Google Books Viewer ----------
+  if (googleVolumeId) {
+    return (
+      <iframe
+        src={`https://books.google.com/books?id=${googleVolumeId}&printsec=frontcover&output=embed`}
+        className="h-[80vh] w-full border rounded-lg shadow-sm"
+        allowFullScreen
+      />
+    )
+  }
+
+  return <p className="text-gray-500">No online version available.</p>
 }
 
-function EpubViewer({ fileUrl }: { fileUrl: string }) {
+function EpubViewer({ fileUrl, onError }: { fileUrl: string; onError?: () => void }) {
   const viewerRef = useRef<HTMLDivElement>(null)
   const [rendition, setRendition] = useState<any>(null)
   const [darkMode, setDarkMode] = useState(false)
@@ -73,12 +88,17 @@ function EpubViewer({ fileUrl }: { fileUrl: string }) {
 
   useEffect(() => {
     if (!viewerRef.current) return
-    const book = ePub(fileUrl)
-    const r = book.renderTo(viewerRef.current, { width: "100%", height: "100%" })
-    r.display()
-    setRendition(r)
-    book.loaded.navigation.then((nav) => setToc(nav.toc))
-  }, [fileUrl])
+    try {
+      const book = ePub(fileUrl)
+      const r = book.renderTo(viewerRef.current, { width: "100%", height: "100%" })
+      r.display()
+      setRendition(r)
+      book.loaded.navigation.then((nav) => setToc(nav.toc))
+    } catch (err) {
+      console.error("EPUB render failed", err)
+      onError?.()
+    }
+  }, [fileUrl, onError])
 
   useEffect(() => {
     if (!rendition) return
