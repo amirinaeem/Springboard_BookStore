@@ -25,7 +25,7 @@
     "**/*.ts",
     "**/*.tsx",
     "src/types"
-  ],
+, "scripts/preloadTop30.ts"  ],
   "exclude": [
     "node_modules",
     "prisma/seed.ts" 

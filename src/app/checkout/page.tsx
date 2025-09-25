@@ -72,6 +72,19 @@ export default function CheckoutPage() {
             <span className="text-xl font-bold">${(total / 100).toFixed(2)}</span>
           </div>
 
+          {/* Sandbox instructions */}
+          <div className="border rounded-2xl p-4 bg-yellow-50 text-sm">
+            <p className="font-semibold">⚠️ Test Mode Only</p>
+            <p>This checkout is running in <strong>Stripe Sandbox</strong>. 
+            Use these test cards — no real charges will be made:</p>
+            <ul className="list-disc pl-6 mt-2">
+              <li>Visa: 4242 4242 4242 4242 (Any future expiry, CVC 123, ZIP 10001)</li>
+              <li>Mastercard: 5555 5555 5555 4444</li>
+              <li>Amex: 3782 822463 10005</li>
+              <li>Declined example: 4000 0000 0000 9995</li>
+            </ul>
+          </div>
+
           <div className="flex gap-3">
             <Link href="/cart" className="flex-1 text-center border rounded-2xl py-3">
               Cancel
