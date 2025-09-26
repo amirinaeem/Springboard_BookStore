@@ -39,6 +39,10 @@ export default async function DashboardPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Collections</h2>
+          <form action="/dashboard/upload_book" method="get">
+  <button className="border rounded-xl px-3 py-2">Upload Your Book</button>
+</form>
+
           <form action="/dashboard/new-collection" method="get">
             <button className="border rounded-xl px-3 py-2">New Collection</button>
           </form>

@@ -1,51 +1,59 @@
 //==============================================================
 // FILE: src/app/api/cart/route.ts
-// DESCRIPTION: Cart endpoints using NextAuth v4 getServerSession.
+// DESCRIPTION: Cart endpoints using NextAuth. Supports Google-sourced books.
 //==============================================================
 
-import { NextResponse } from 'next/server'
-import { prisma } from '../../lib/prisma'
+import { NextResponse } from "next/server"
+import { prisma } from "../../lib/prisma"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../lib/auth"
+import { ensureBookSaved } from "../../lib/book"
 
-async function getOrCreateCart(userId?: string) {
-  if (userId) {
-    const found = await prisma.cart.findFirst({
-      where: { userId },
-      include: { items: { include: { book: true } } },
-    })
-    if (found) return found
-    return prisma.cart.create({
-      data: { userId },
-      include: { items: { include: { book: true } } },
-    })
-  }
-  // If you want a guest cart, implement cookie/session storage.
-  // For now we'll return an empty "shape" to avoid client crashes.
-  return {
-    id: 'guest',
-    userId: null,
-    items: [] as any[],
-  }
+// utility to get or create user cart
+async function getOrCreateCart(userId: string) {
+  const found = await prisma.cart.findFirst({
+    where: { userId },
+    include: { items: { include: { book: true } } },
+  })
+  if (found) return found
+
+  return prisma.cart.create({
+    data: { userId },
+    include: { items: { include: { book: true } } },
+  })
 }
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  const cart = await getOrCreateCart(session?.user?.id as string | undefined)
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const cart = await getOrCreateCart(session.user.id)
   return NextResponse.json(cart)
 }
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const { bookId, qty } = await req.json()
+
+  const { bookId, qty, book, fromGoogle } = await req.json()
+
+  // 1. Find or create book
+  let dbBook
+  if (fromGoogle && book) {
+    dbBook = await ensureBookSaved(book) // saves from Google data
+  } else if (bookId) {
+    dbBook = await prisma.book.findUnique({ where: { id: bookId } })
+  }
+
+  if (!dbBook) return NextResponse.json({ error: "Book not found" }, { status: 404 })
+
+  // 2. Add to cart
   const cart = await getOrCreateCart(session.user.id)
   await prisma.cartItem.upsert({
-    where: { cartId_bookId: { cartId: cart.id, bookId } },
-    create: { cartId: cart.id, bookId, qty: qty ?? 1 },
+    where: { cartId_bookId: { cartId: cart.id, bookId: dbBook.id } },
+    create: { cartId: cart.id, bookId: dbBook.id, qty: qty ?? 1 },
     update: { qty: { increment: qty ?? 1 } },
   })
-  // return fresh cart with books
+
   const fresh = await getOrCreateCart(session.user.id)
   return NextResponse.json(fresh)
 }

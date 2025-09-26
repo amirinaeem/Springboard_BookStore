@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Viewer, Worker } from "@react-pdf-viewer/core"
 import { defaultLayoutPlugin } from "@react-pdf-viewer/default-layout"
-import ePub from "epubjs"
+import ePub, { Rendition, NavItem } from "epubjs"
 
 import "@react-pdf-viewer/core/lib/styles/index.css"
 import "@react-pdf-viewer/default-layout/lib/styles/index.css"
@@ -19,13 +19,11 @@ interface Props {
 }
 
 export default function BookViewer({ fileUrl, bookId, googleVolumeId }: Props) {
-  const [contentType, setContentType] = useState<string>("")
+  const [contentType, setContentType] = useState("")
   const [loading, setLoading] = useState(true)
-  const [fallback, setFallback] = useState(false) // fallback to Google
+  const [fallback, setFallback] = useState(false)
 
   const defaultLayoutPluginInstance = defaultLayoutPlugin()
-
-  // Fallback API stream endpoint
   const effectiveUrl = fileUrl || `/api/books/${bookId}/download?inline=1`
 
   useEffect(() => {
@@ -33,7 +31,6 @@ export default function BookViewer({ fileUrl, bookId, googleVolumeId }: Props) {
       setLoading(false)
       return
     }
-
     async function detect() {
       try {
         const res = await fetch(effectiveUrl, { method: "HEAD" })
@@ -51,7 +48,8 @@ export default function BookViewer({ fileUrl, bookId, googleVolumeId }: Props) {
 
   if (loading) return <p className="text-gray-500">Loading book...</p>
 
-  if (!fallback && contentType.includes("pdf")) {
+  // ---------- PDF ----------
+  if (!fallback && (contentType.includes("pdf") || effectiveUrl.endsWith(".pdf"))) {
     return (
       <div className="h-[80vh] border rounded-lg shadow-sm">
         <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
@@ -61,11 +59,12 @@ export default function BookViewer({ fileUrl, bookId, googleVolumeId }: Props) {
     )
   }
 
+  // ---------- EPUB ----------
   if (!fallback && (contentType.includes("epub") || effectiveUrl.endsWith(".epub"))) {
     return <EpubViewer fileUrl={effectiveUrl} onError={() => setFallback(true)} />
   }
 
-  // ---------- Fallback: Google Books Viewer ----------
+  // ---------- Google Books Fallback ----------
   if (googleVolumeId) {
     return (
       <iframe
@@ -79,12 +78,15 @@ export default function BookViewer({ fileUrl, bookId, googleVolumeId }: Props) {
   return <p className="text-gray-500">No online version available.</p>
 }
 
+//==============================================================
+// EPUB VIEWER
+//==============================================================
 function EpubViewer({ fileUrl, onError }: { fileUrl: string; onError?: () => void }) {
   const viewerRef = useRef<HTMLDivElement>(null)
-  const [rendition, setRendition] = useState<any>(null)
+  const [rendition, setRendition] = useState<Rendition | null>(null)
   const [darkMode, setDarkMode] = useState(false)
   const [fontSize, setFontSize] = useState(100)
-  const [toc, setToc] = useState<any[]>([])
+  const [toc, setToc] = useState<NavItem[]>([])
 
   useEffect(() => {
     if (!viewerRef.current) return
@@ -117,7 +119,7 @@ function EpubViewer({ fileUrl, onError }: { fileUrl: string; onError?: () => voi
             {toc.map((item) => (
               <li key={item.id}>
                 <button
-                  onClick={() => rendition.display(item.href)}
+                  onClick={() => rendition?.display(item.href)}
                   className="w-full text-left hover:underline"
                 >
                   {item.label}

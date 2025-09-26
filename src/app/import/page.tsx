@@ -1,49 +1,64 @@
 //==============================================================
 // FILE: src/app/import/page.tsx
-// DESCRIPTION: UI to import books from Google Books by query.
+// DESCRIPTION: Show Google Books results (metadata only).
 //==============================================================
 
-import { redirect } from "next/navigation"
+"use client"
 
-export default async function ImportPage({
-  searchParams,
-}: {
-  searchParams: { q?: string }
-}) {
+import { useEffect, useState } from "react"
+import Loading from "../components/Loading"
+import BookCard from "../components/BookCard"
+
+export default function ImportPage({ searchParams }: { searchParams: { q?: string } }) {
   const q = searchParams.q?.trim() || ""
+  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<any[]>([])
+  const [source, setSource] = useState<string>("")
 
-  if (!q) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold mb-2">Import</h1>
-        <p>No query provided.</p>
-      </div>
-    )
-  }
-
-  // Call your API to import
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_URL}/api/books/search?q=${encodeURIComponent(q)}`,
-    {
-      method: "GET",
-      cache: "no-store",
+  useEffect(() => {
+    if (!q) return
+    async function fetchBooks() {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}`, {
+          cache: "no-store",
+        })
+        if (!res.ok) throw new Error("Search failed")
+        const data = await res.json()
+        setItems(data.items || [])
+        setSource(data.source || "unknown")
+      } catch (err) {
+        console.error("Failed to load books", err)
+        setItems([])
+        setSource("error")
+      } finally {
+        setLoading(false)
+      }
     }
-  )
+    fetchBooks()
+  }, [q])
 
-  let msg = "Failed to import"
-  if (res.ok) {
-    const j = await res.json()
-    msg = `Imported ${j.items?.length || 0} books`
-  }
+  if (!q) return <p>No query provided.</p>
+  if (loading) return <Loading />
 
-  // After import, redirect back to search results
-  redirect(`/?q=${encodeURIComponent(q)}`)
-
-  // This will render briefly if redirect doesn’t happen instantly
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-2">Importing "{q}"</h1>
-      <p>{msg}</p>
+      <h1 className="text-xl font-semibold mb-4">
+        {source === "google" ? "Google Results" : "Search Results"} for <em>{q}</em>
+      </h1>
+
+      {items.length === 0 && <p>No results found.</p>}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        {items.map((b: any) => (
+          <BookCard
+            key={b.id || b.googleVolumeId}
+            book={b}
+            fromGoogle={source === "google"}
+          />
+        ))}
+      </div>
     </div>
   )
 }
+
