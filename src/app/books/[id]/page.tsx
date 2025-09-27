@@ -54,8 +54,8 @@ export default async function BookPage({ params }: { params: { id: string } }) {
               ${(book.priceCents / 100).toFixed(2)}
             </span>
 
-            {!owned && <AddToCart bookId={book.id} />}
-            <AddToCollection bookId={book.id} />
+            {!owned && <AddToCart book={book} />}
+            <AddToCollection book={book} />
 
             {book.fileUrl && (
               <>
